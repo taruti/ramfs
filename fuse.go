@@ -18,7 +18,6 @@ func (fs *FS) Mount(mountpoint string) error {
 	if err != nil {
 		return err
 	}
-	fs.ms.Debug = true //FIXME
 	go fs.ms.Loop()
 	fs.ms.WaitMount()
 	return nil
