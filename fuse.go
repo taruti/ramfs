@@ -3,6 +3,7 @@ package ramfs
 
 import (
 	. "github.com/hanwen/go-fuse/fuse"
+	"github.com/hanwen/go-fuse/raw"
 	"os"
 	"time"
 )
@@ -17,6 +18,7 @@ func (fs *FS) Mount(mountpoint string) error {
 	if err != nil {
 		return err
 	}
+	fs.ms.Debug = true //FIXME
 	go fs.ms.Loop()
 	fs.ms.WaitMount()
 	return nil
@@ -134,15 +136,86 @@ func (n *fso) Create(name string, flags uint32, mode uint32, context *Context) (
 }
 
 type fsoFile struct {
-	DefaultFile
+	*fso
 }
 
-func (n *fsoFile) Flush() Status {
+func (f fsoFile) SetInode(*Inode) {
+}
+
+func (f fsoFile) InnerFile() File {
+	return nil
+}
+
+func (f fsoFile) String() string {
+	return "file"
+}
+
+func (f fsoFile) Read(buf []byte, off int64) (ReadResult, Status) {
+	soff := int(off)
+	if soff > len(f.data) {
+		soff = len(f.data)
+	}
+	return &ReadResultData{f.data[soff:]}, OK
+}
+
+func (f fsoFile) Release() {
+
+}
+
+func (f fsoFile) GetAttr(a *Attr) Status {
+	return f.fso.GetAttr(a, f, nil)
+}
+
+func (f fsoFile) Fsync(flags int) (code Status) {
+	return ENOSYS
+}
+
+func (f fsoFile) Utimens(atime *time.Time, mtime *time.Time) Status {
+	return ENOSYS
+}
+
+func (f fsoFile) Truncate(size uint64) Status {
+	return ENOSYS
+}
+
+func (f fsoFile) Chown(uid uint32, gid uint32) Status {
+	return ENOSYS
+}
+
+func (f fsoFile) Chmod(perms uint32) Status {
+	return ENOSYS
+}
+
+func (f fsoFile) Ioctl(input *raw.IoctlIn) (output *raw.IoctlOut, data []byte, code Status) {
+	return nil, nil, ENOSYS
+}
+
+func (f fsoFile) Allocate(off uint64, size uint64, mode uint32) (code Status) {
+	return ENOSYS
+}
+
+func (n fsoFile) Flush() Status {
 	return OK
 }
 
+func (n fsoFile) Write(data []byte, off int64) (uint32, Status) {
+	switch {
+	case off > 2*1024*1024*1024:
+		return 0, EIO
+	case int(off)+len(data) > len(n.data):
+		old := n.data
+		n.data = make([]byte, int(off)+len(data))
+		copy(n.data, old)
+		fallthrough
+	default:
+		copy(n.data[int(off):], data)
+	}
+	n.info.Size = uint64(len(n.data))
+	return uint32(len(data)), OK
+}
+
 func (n *fso) newFile() File {
-	return &fsoFile{}
+	return fsoFile{fso: n}
 }
 
 func (n *fso) Open(flags uint32, context *Context) (file File, code Status) {
@@ -165,6 +238,7 @@ func (n *fso) Truncate(file File, size uint64, context *Context) (code Status) {
 	default:
 		n.data = n.data[0:int(size)]
 	}
+	n.info.Size = uint64(len(n.data))
 	return OK
 }
 
